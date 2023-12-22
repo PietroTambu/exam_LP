@@ -1,12 +1,8 @@
 .DEFAULT_GOAL := help
 ROOT:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
-SHELL:=/bin/zsh
 
 # PROLOG PATH
 PROLOG:=$(shell which swipl)
-
-# Args
-ROOT:=$(dir $(realpath $(firstword $(MAKEFILE_LIST))))
 
 # Colors
 GRAY="\033[1;30m"
