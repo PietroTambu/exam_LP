@@ -12,6 +12,30 @@ write_colored(Color, Text) :-
     color(reset, ResetCode),
     write(ResetCode).
 
+% Definition of the def_class predicate
+def_class(ClassName, Parents) :-
+    assertz(class(ClassName, Parents, [])).
+
+def_class(ClassName, Parents, Parts) :-
+    assertz(class(ClassName, Parents, Parts)).
+
+% Helper for defining fields and methods
+def_field(FieldName, Value) :-
+    field(FieldName, Value, _).
+
+def_field(FieldName, Value, Type) :-
+    field(FieldName, Value, Type).
+
+def_method(MethodName, ArgList, Form) :-
+    method(MethodName, ArgList, Form).
+
+% Basic definitions for field and method
+field(FieldName, Value, Type) :-
+    assertz(field_definition(FieldName, Value, Type)).
+
+method(MethodName, ArgList, Form) :-
+    assertz(method_definition(MethodName, ArgList, Form)).
+
 % Initialization
 :- initialization(init).
 
