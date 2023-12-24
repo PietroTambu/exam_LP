@@ -13,16 +13,15 @@ write_colored(Color, Text) :-
     color(reset, ResetCode),
     write(ResetCode).
 
+clear :- shell('clear').    % per sistemi Unix/Linux
+cls :- shell('cls').        % per Windows
+
 % Implementazione dei controlli di tipo
 type_check(Value, Type) :- 
     (Type == integer -> integer(Value) ; true),
     (Type == float -> float(Value) ; true).
 
-
-
-
-  % END utilities
-
+% END utilities
 
 
 
@@ -31,23 +30,6 @@ def_class(ClassName, Parents) :-
     assertz(class(ClassName, Parents, [])).
 
 def_class(ClassName, Parents, Parts) :-
-
-    % se mi definisce classe con parents:
-    %   se definisce un field della sottoclasse:
-    %     se (field typed && sott_field typed):
-    %         verificare congruenza name:type
-    %             se uguali: aggiugere field in [field(name, value, type)]
-    %             se non uguali: errore (incogruenza type stesso name tra classe e sottoclasse.), fail.
-    %     se (field typed && sott_field untype) || (field untyped && sott_field untyped):
-    %         aggiugere field in [field(name, value, type?)]
-    %     se (field untyped && sott_field typed):
-    %         fail. (incogruenza type. Scenario non accettato)
-    %   se definisce un method della sottoclasse:
-    %       se (name == sott_name && args.len() == sott_args.len())
-    %           fail.
-    %       else
-    %           aggiugere method in [method(name, args, form)]
-
     assertz(class(ClassName, Parents, Parts)),
     assert_parts(ClassName, Parts).
 
@@ -72,6 +54,16 @@ assert_part(ClassName, method(MethodName, ArgList, Form)) :-    % assert method
 
 
 
+
+remove_overridden([], _, []).
+remove_overridden([DefAttr|DefAttrs], Fields, Result) :-
+    DefAttr = (Name=_),
+    (   memberchk(Name=_, Fields)
+    ->  remove_overridden(DefAttrs, Fields, Result)
+    ;   Result = [DefAttr|Rest],
+        remove_overridden(DefAttrs, Fields, Rest)
+    ).
+
 get_attributes(ClassName, Attributes, IncludeType) :-
     (   IncludeType
     ->  findall(
@@ -86,53 +78,184 @@ get_attributes(ClassName, Attributes, IncludeType) :-
         )
     ).
 
-remove_overridden([], _, []).
-remove_overridden([DefAttr|DefAttrs], Fields, Result) :-
-    DefAttr = (Name=_),
-    (   memberchk(Name=_, Fields)
-    ->  remove_overridden(DefAttrs, Fields, Result)
-    ;   Result = [DefAttr|Rest],
-        remove_overridden(DefAttrs, Fields, Rest)
-    ).
-        
+
+
+get_attributes_from_classes(ClassList, AllAttributes, IncludeType) :-
+    get_attributes_from_classes_helper(ClassList, [], AllAttributes, IncludeType).
+
+% Helper per iterare attraverso la lista di classi
+get_attributes_from_classes_helper([], Accumulator, Accumulator, _).
+get_attributes_from_classes_helper([ClassName|RestClasses], Accumulator, AllAttributes, IncludeType) :-
+    get_attributes(ClassName, Attributes, IncludeType),
+    add_unique_attributes(Attributes, Accumulator, NewAccumulator),
+    get_attributes_from_classes_helper(RestClasses, NewAccumulator, AllAttributes, IncludeType).
+
+% Aggiunge attributi all'accumulatore solo se non sono già presenti
+add_unique_attributes([], Accumulator, Accumulator).
+add_unique_attributes([Attr|Attrs], Accumulator, NewAccumulator) :-
+    attribute_name(Attr, AttrName),
+    memberchk(AttrName=_, Accumulator), % Verifica se l'attributo è già presente
+    add_unique_attributes(Attrs, Accumulator, NewAccumulator).
+add_unique_attributes([Attr|Attrs], Accumulator, NewAccumulator) :-
+    attribute_name(Attr, AttrName),
+    \+ memberchk(AttrName=_, Accumulator),
+    add_unique_attributes(Attrs, [Attr|Accumulator], NewAccumulator).
+
+% Estrae il nome dell'attributo da un'espressione attributo-valore (o attributo-tipo-valore)
+attribute_name(Name=_Value, Name).
+attribute_name(Name:_Type=_Value, Name).
+
+
+
+
+
+
+classes_chain(ClassName, Result) :-
+    find_superclasses(ClassName, [ClassName], ReversedResult),
+    reverse(ReversedResult, Result).
+
+find_superclasses(ClassName, Accumulator, Result) :-
+    % Ottiene le superclassi della classe corrente
+    class(ClassName, SuperClasses, _),
+    % Processa ogni superclasse
+    process_superclasses(SuperClasses, Accumulator, Result).
+
+% Processa ogni superclasse, accumulando i risultati
+process_superclasses([], Accumulator, Accumulator).
+process_superclasses([SuperClass|SuperClasses], Accumulator, Result) :-
+    % Verifica che la superclasse non sia già stata inclusa
+    \+ member(SuperClass, Accumulator),
+    % Aggiunge la superclasse all'accumulatore
+    find_superclasses(SuperClass, [SuperClass|Accumulator], PartialResult),
+    % Continua con le restanti superclassi
+    process_superclasses(SuperClasses, PartialResult, Result).
+process_superclasses([SuperClass|SuperClasses], Accumulator, Result) :-
+    % Se la superclasse è già stata inclusa, salta
+    member(SuperClass, Accumulator),
+    process_superclasses(SuperClasses, Accumulator, Result).
+
+
+
+
+
 
 make(InstanceName, ClassName) :-
     make(InstanceName, ClassName, []).
 
 make(InstanceName, ClassName, Fields) :-
-    
-    % verificare non ci siano Fields illegali e che il type corrisponda a quanto dichiarato in class(...), altrimenti false.
-    get_attributes(ClassName, DefaultAttributesTyped, true),
+    % verificare non ci siano Fields illegali e che il type corrisponda a quanto dichiarato in class(...).
+    classes_chain(ClassName, ChainedClasses),
+    get_attributes_from_classes(ChainedClasses, DefaultAttributesTyped, true),
+    % Typing check
     forall(
         (member(Field, Fields), Field = (Name=Value)),
-        (memberchk(Name:Type=_, DefaultAttributesTyped), type_check(Value, Type))
+        (
+            memberchk(Name:Type=_, DefaultAttributesTyped),
+            type_check(Value, Type)
+        )
     ),
 
     % sovrascrivere lista DefaultAttributes con tutti i Fields
-    get_attributes(ClassName, DefaultAttributes, false),
+    get_attributes_from_classes(ChainedClasses, DefaultAttributes, false),
     remove_overridden(DefaultAttributes, Fields, UpdatedDefaults),
     append(Fields, UpdatedDefaults, FinalAttributes),
 
+    % Add method: TODO: istanziare metodi della ClassName e di tutte le sottoclassi. attenzione a overriding. Non istanziare tutto a caso...
+    forall(
+        class_method(ClassName, Name, Args, Method),
+        add_method(InstanceName, Name, Args, Method)
+    ),
+
     InstanceTerm = instance(ClassName, FinalAttributes),
     (   atom(InstanceName)
-    ->  (   clause(instance(InstanceName, _, _), true)
-        ->  write_colored(red, 'Instance already exist'),
-            fail
-        ;   assertz(instance(InstanceName, ClassName, FinalAttributes))
-        )
-    ;   var(InstanceName)
-    ->  InstanceName = InstanceTerm,
-        (   clause(instance(InstanceName, _, _), true)
-        ->  write_colored(red, 'Instance already exist'),
-            fail
-        ;   assertz(instance(InstanceName, ClassName, FinalAttributes))
-        )
-    ;   InstanceName = InstanceTerm
+        ->  (   clause(instance(InstanceName, _, _), true)
+            ->  fail  % L'istanza esiste già, fallisce.
+            ;   assertz(instance(InstanceName, ClassName, FinalAttributes))  % Crea l'istanza.
+            )
+        ;   var(InstanceName)
+        ->  InstanceName = InstanceTerm,
+            (   clause(instance(InstanceName, _, _), true)
+            ->  fail  % L'istanza esiste già, fallisce.
+            ;   assertz(instance(InstanceName, ClassName, FinalAttributes))  % Crea l'istanza.
+            )
+        ;   InstanceName = InstanceTerm
     ).
+
+
+% Aggiungi un nuovo metodo alla base di conoscenza
+add_method(InstanceName, MethodName, Args, Actions) :-
+    % Costruisci il termine del predicato
+    Predicate =.. [MethodName, InstanceName | Args],
+    % Costruisci il corpo del predicato (azione da eseguire)
+    add_method_helper(InstanceName, Actions, FinalActions),
+    assertz((Predicate :- FinalActions)).
+
+
+add_method_helper(InstanceName, Method, FinalMethod) :-
+    % Modifico il metodo in array di istruzioni
+    term_to_list(Method, MethodAsListReversed),
+    reverse(MethodAsList,MethodAsListReversed),
+    % Per ogni istruzione in MethodAsList eseguo la replace_this_by_list
+    maplist(replace_this_in_predicate(InstanceName), MethodAsList, FinalMethodAsList),
+    % Rimodifico la MethodAsList come Method.
+    list_to_term(FinalMethodAsList, FinalMethod).
+
+
+replace_this_in_predicate(InstanceName, Predicate, FinalPredicate) :-
+    % Predicato -> Lista se non già lista.
+    (   is_list(Predicate)
+    ->  Lista = Predicate
+    ;   Predicate =.. Lista
+    ),
+    % Sostituisco
+    maplist(replace_this(InstanceName), Lista, ResultList),
+    (   is_list(Predicate)
+    ->  FinalPredicate = ResultList
+    ;   FinalPredicate =.. ResultList
+    ).
+    % Faccio ritornare Lista a predicato.
+
+
+replace_this(InstanceName, Value, Result) :-
+(   atom_or_string(Value)
+->  (   Value = this
+    ->  Result = InstanceName
+    ;   Result = Value
+    )
+;   (   var(Value)
+    ->  Result = Value
+    ;   replace_this_in_predicate(InstanceName, Value, Result)
+    )
+).
+
+atom_or_string(Value) :-
+(   atom(Value)
+;   string(Value)
+).
+
+% Predicato principale per convertire un termine complesso in una lista di termini
+term_to_list(Term, List) :-
+    term_to_list_helper(Term, [], List).
+
+% Helper ricorsivo per gestire la conversione
+term_to_list_helper((Term1, Term2), Accumulator, List) :-
+    !,  % Taglio per evitare il backtracking
+    term_to_list_helper(Term1, Accumulator, NewAccumulator),
+    term_to_list_helper(Term2, NewAccumulator, List).
+term_to_list_helper(Term, Accumulator, [Term|Accumulator]).
+
+% Predicato principale per convertire una lista di termini in un termine complesso
+list_to_term(List, Term) :-
+    list_to_term_helper(List, Term).
+
+% Helper ricorsivo per costruire il termine complesso dalla lista
+list_to_term_helper([LastTerm], LastTerm) :- !.  % Caso base: l'ultimo termine nella lista
+list_to_term_helper([Term1 | Rest], (Term1, CompoundTerm)) :-
+    list_to_term_helper(Rest, CompoundTerm).
+
+
+
     
-
-
-
 is_class(ClassName) :-
     class(ClassName, _, _).
 
@@ -170,8 +293,50 @@ field(Instance, AttributeName, Value) :-
 
 init :-
     write_colored(green, '\nIl file oop.pl è stato caricato correttamente.\n'), nl,
-    def_class(person, [], [field(age, 21, integer), field(name, "default")]),
-    def_class(student, [person], [field(studentID, 1, integer)]),
-    make(mario, student),
-    make(marco, person),
-    make(nuovo, person, [age=18]).
+    def_class(person, [], [field(age, 21, integer), field(name, "person_name")]),
+    def_class(
+        student,
+        [person],
+        [
+            field(university, 'Berkeley'),
+            method(
+                talk,
+                [],
+                (
+                    write('My name is '),
+                    field(this, name, N),
+                    writeln(N),
+                    write('My age is '),
+                    field(this, age, A),
+                    writeln(A)
+                )
+            ),
+            method(
+                to_string,
+                [ResultingString],
+                (
+                    with_output_to(
+                        string(ResultingString),
+                        (
+                            field(this, name, N),
+                            field(this, university, U),
+                            format('#<~w student ~w>', [U, N])
+                        )
+                    )
+                )
+            )
+        ]
+    ),
+    def_class(
+        studente_bicocca,
+        [student],
+        [
+            field(studentID, 894628, integer),
+            field(name, "student_bicocca_name")
+        ]
+    ),
+    make(p, person, [age=99, name="custom_name"]),
+    make(s, student),
+    make(sb, studente_bicocca, [name="ssss", age=999]).
+
+    
