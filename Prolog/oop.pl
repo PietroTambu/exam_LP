@@ -1,4 +1,3 @@
-
 %%%% -*- Mode: Prolog -*-
 
 %%%% oop.pl
@@ -489,8 +488,9 @@ init :-
         student,
         [person],
         [
-            field(name, 'Eva Lu Ator'),
-            field(university, 'Berkeley'),
+            field(name, 'student_name'),
+            field(university, 'university_name'),
+            field(age, 21, integer),
             method(
                 talk,
                 [],
@@ -498,9 +498,14 @@ init :-
                     write('My name is '),
                     field(this, name, N),
                     writeln(N),
-                    write('My age is '),
+                    write('I am '),
                     field(this, age, A),
-                    writeln(A)
+                    write(A),
+                    writeln(' years old'),
+                    write('I attend '),
+                    field(this, university, U),
+                    write(U),
+                    writeln(' university')
                 )
             )
         ]
