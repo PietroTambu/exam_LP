@@ -193,18 +193,13 @@ make(InstanceName, ClassName, Fields) :-
     remove_overridden(DefaultAttributes, Fields, UpdatedDefaults),
     append(Fields, UpdatedDefaults, FinalAttributes),
 
-    % Add method: TODO: istanziare metodi della ClassName e di tutte le sottoclassi. attenzione a overriding. Non istanziare tutto a caso...
-    % forall(
-    %     class_method(ClassName, Name, Args, Method),
-    %     add_method(InstanceName, Name, Args, Method)
-    % ),
+ 
     get_methods_from_classes(ChainedClasses, Methods),
 
     forall(
         member([Name, Args, Method], Methods),
         add_method(InstanceName, Name, Args, Method)
     ),
-    % forall((member(Number, [1, 2])), writeln(Number)),
 
     InstanceTerm = instance(ClassName, FinalAttributes),
     (   atom(InstanceName)
@@ -323,9 +318,21 @@ inst(InstanceName, Instance) :-
     Instance = instance(InstanceName, ClassName, Params).
 
 
+
 field(Instance, AttributeName, Value) :-
     instance(Instance, _, Attributes),
     member(AttributeName=Value, Attributes).
+
+% fieldx predicate extracts a value from an instance by traversing a chain of fields
+fieldx(Instance, [FieldName|FieldNames], Result) :-
+    field(Instance, FieldName, IntermediateResult),
+    fieldx_recursive(IntermediateResult, FieldNames, Result).
+
+% Recursive helper for fieldx to handle multiple fields
+fieldx_recursive(Intermediate, [], Intermediate).
+fieldx_recursive(Intermediate, [FieldName|FieldNames], Result) :-
+    field(Intermediate, FieldName, NextIntermediate),
+    fieldx_recursive(NextIntermediate, FieldNames, Result).
 
 
 % Initialization
@@ -383,9 +390,24 @@ init :-
                 )
             )
         ]
-    ).
-    % make(p, person, [age=99, name="custom_name"]),
-    % make(s, student),
-    % make(sb, studente_bicocca, [name="ssss", age=999]).
+    ),
+    def_class(
+        obj,
+        [person],
+        [
+            field(other, A)
+        ]
+    ),
+    make(p, person, [age=99, name="custom_name"]),
+    make(s, student),
+    make(sb, studente_bicocca, [name="ssss", age=999]),
+    make(obj1, obj, [other=obj2]),
+    make(obj2, obj, [name=obj3]),
+    make(obj3, obj, [name='ok']).
 
     
+% fieldx(obj1, [other, name, name], R).
+% field(I1, s1, V1),
+% field(V1, s2, V2),
+% field(V2, s3, R),
+% fieldx(I1, [s1, s2, s3], R).
