@@ -1,11 +1,25 @@
 
-% ANSI color codes                                              % Utilities:
+%%%% -*- Mode: Prolog -*-
+
+%%%% oop.pl
+%%%%
+%%%% Tamburini Pietro 894628
+%%%%
+
+%%% color/2
+%%%
+%%% Returns the ANSI color code string for a given color.
+%%% Succeeds when provided with a known color name.
 color(red, "\033[31m").
 color(green, "\033[32m").
 color(blue, "\033[34m").
 color(reset, "\033[0m").
 
-% function for printing colored text
+
+%%% write_colored/2.
+%%%
+%%% Writes text in a specified color.
+%%% Succeeds for any text and a defined color.
 write_colored(Color, Text) :-
     color(Color, ColorCode),
     write(ColorCode),
@@ -13,57 +27,90 @@ write_colored(Color, Text) :-
     color(reset, ResetCode),
     write(ResetCode).
 
-clear :- shell('clear').    % per sistemi Unix/Linux
-cls :- shell('cls').        % per Windows
 
-% Implementazione dei controlli di tipo
+%%% type_check/2.
+%%%
+%%% Checks if a value matches a specified type. Succeeds if the value
+%%% matches the type or if the type is not specified.
+%%% Handles 'integer' and 'float' types.
 type_check(Value, Type) :- 
     (Type == integer -> integer(Value) ; true),
     (Type == float -> float(Value) ; true).
 
-% END utilities
 
-
-
+%%% def_class/2.
+%%%
+%%% Defines a new class with a given name and parent classes.
+%%% Succeeds by asserting the class into the database.
+%%% Requires the name of the class and a list of parent classes.
 def_class(ClassName, Parents) :-
-    % TODO: Check Esistenza Parents (Classe/i []) is_class
+    % TODO: Check existence of Parents (Classes []) + not already exist
     assertz(class(ClassName, Parents, [])).
 
+
+%%% def_class/3.
+%%%
+%%% Extends def_class/2 by also defining parts (fields and methods).
+%%% Succeeds by asserting the class with its parts into the database.
 def_class(ClassName, Parents, Parts) :-
+    % TODO: Check existence of Parents (Classes []) + not already exist
     assertz(class(ClassName, Parents, Parts)),
     assert_parts(ClassName, Parts).
 
-assert_parts(_, []).                                            % Caso def_class/2 || def_class/3 con Parts []
-assert_parts(ClassName, [Part | Rest]) :-                       % Funzione ricorsiva per aggiungere parts (sia field che method)
+
+%%% assert_parts/2.
+%%%
+%%% Recursively asserts each part (field or method) of a class.
+%%% Succeeds after asserting all parts.
+assert_parts(_, []).
+assert_parts(ClassName, [Part | Rest]) :-
     assert_part(ClassName, Part),
     assert_parts(ClassName, Rest).
 
+
+%%% assert_part/2.
+%%%
+%%% Asserts a single part (field or method) of a class.
+%%% For fields, it checks type compatibility if a type is given.
+%%% Succeeds if the part is correctly asserted or fails if the
+%%% type check for a field fails.
 assert_part(ClassName, field(FieldName, Value)) :-
     assertz(class_field(ClassName, FieldName, Value, _)).
-
 assert_part(ClassName, field(FieldName, Value, Type)) :-
     (   type_check(Value, Type)
     ->  assertz(class_field(ClassName, FieldName, Value, Type))
-    ;   atomic_list_concat(['Type check failed for field: ', FieldName], ErrorMessage),
+    ;   atomic_list_concat(
+            ['Type check failed for field: ', FieldName],
+            ErrorMessage
+        ),
         write_colored(red, ErrorMessage),
-        fail  % Type Check Failed
+        fail
     ).
-
-assert_part(ClassName, method(MethodName, ArgList, Form)) :-    % assert method
-    assertz(class_method(ClassName, MethodName, ArgList, Form)).      
-
+assert_part(ClassName, method(MethodName, ArgList, Form)) :-
+    assertz(class_method(ClassName, MethodName, ArgList, Form)). 
 
 
+%%% remove_overridden/3.
+%%%
+%%% Removes attributes from a default set if they are overridden
+%%% in a given field set.
+%%% Succeeds by returning a list of attributes
 remove_overridden([], _, []).
 remove_overridden([DefAttr|DefAttrs], Fields, Result) :-
     DefAttr = (Name=_),
     (   memberchk(Name=_, Fields)
     ->  remove_overridden(DefAttrs, Fields, Result)
-    ;   Result = [DefAttr|Rest],
-        remove_overridden(DefAttrs, Fields, Rest)
+    ;   Result = [DefAttr|Others],
+        remove_overridden(DefAttrs, Fields, Others)
     ).
 
 
+%%% get_attributes/3.
+%%%
+%%% Retrieves attributes of a class.
+%%% If 'IncludeType' is true, it includes attribute types.
+%%% Succeeds by returning a list of attributes (with or without types)
+%%% for the given class.
 get_attributes(ClassName, Attributes, IncludeType) :-
     (   IncludeType
     ->  findall(
@@ -78,6 +125,11 @@ get_attributes(ClassName, Attributes, IncludeType) :-
         )
     ).
 
+
+%%% get_methods/2.
+%%%
+%%% Retrieves methods of a class.
+%%% Succeeds by returning a list of methods defined for the class.
 get_methods(ClassName, Methods) :-
     findall(
         [Name, Args, Value],
@@ -86,222 +138,299 @@ get_methods(ClassName, Methods) :-
     ).
 
 
-get_methods_from_classes(ClassList, AllAttributes) :-
-    get_methods_from_classes_helper(ClassList, [], AllAttributes).
-% Helper per iterare attraverso la lista di classi
-get_methods_from_classes_helper([], Accumulator, Accumulator).
-get_methods_from_classes_helper([ClassName|RestClasses], Accumulator, AllAttributes) :-
+%%% get_methods_from_classes/2.
+%%% get_methods_from_classes_helper/3.
+%%%
+%%% Retrieves methods from a list of classes, ensuring uniqueness.
+%%% Succeeds with a list of unique methods.
+get_methods_from_classes(ClassList, AllAttrs) :-
+    get_methods_from_classes_helper(ClassList, [], AllAttrs).
+get_methods_from_classes_helper([], Acc, Acc).
+get_methods_from_classes_helper([ClassName|Others], Acc, AllAttrs) :-
     get_methods(ClassName, Attributes),
-    add_unique_methods(Attributes, Accumulator, NewAccumulator),
-    get_methods_from_classes_helper(RestClasses, NewAccumulator, AllAttributes).
+    add_unique_methods(Attributes, Acc, NewAcc),
+    get_methods_from_classes_helper(Others, NewAcc, AllAttrs).
 
-% Aggiunge metodi all'accumulatore solo se non sono già presenti
-add_unique_methods([], Accumulator, Accumulator).
-add_unique_methods([Attr|Attrs], Accumulator, NewAccumulator) :-
+
+%%% add_unique_methods/3.
+%%%
+%%% Adds unique methods to an accumulator list, avoiding duplicates.
+%%% Succeeds with an updated list of unique methods.
+add_unique_methods([], Acc, Acc).
+add_unique_methods([Attr|Attrs], Acc, NewAcc) :-
     Attr = [Name, Args, _],
-    memberchk([Name, Args, _], Accumulator), % Verifica se il metodo è già presente
-    add_unique_methods(Attrs, Accumulator, NewAccumulator).
-add_unique_methods([Attr|Attrs], Accumulator, NewAccumulator) :-
+    memberchk([Name, Args, _], Acc),
+    add_unique_methods(Attrs, Acc, NewAcc).
+add_unique_methods([Attr|Attrs], Acc, NewAcc) :-
     Attr = [Name, Args, _],
-    \+ memberchk([Name, Args, _], Accumulator),
-    add_unique_methods(Attrs, [Attr|Accumulator], NewAccumulator).
-
-% Estrae il nome del metodo da un'espressione attributo-valore (o attributo-tipo-valore)
-methods_name(Name=_Value, Name).
-methods_name(Name:_Type=_Value, Name).
+    \+ memberchk([Name, Args, _], Acc),
+    add_unique_methods(Attrs, [Attr|Acc], NewAcc).
 
 
+%%% get_fields_from_classes/3.
+%%%
+%%% Retrieves attributes from a list of classes, considering 'Type'.
+%%% Succeeds with a list of unique attributes.
+get_fields_from_classes(ClassList, AllAttrs, Type) :-
+    get_attrs_from_classes_helper(ClassList, [], AllAttrs, Type).
+get_attrs_from_classes_helper([], Acc, Acc, _).
+get_attrs_from_classes_helper([ClassName|Others],Acc,AllAttrs,Type) :-
+    get_attributes(ClassName, Attributes, Type),
+    add_unique_attributes(Attributes, Acc, NewAcc),
+    get_attrs_from_classes_helper(Others, NewAcc, AllAttrs, Type).
 
 
-get_attributes_from_classes(ClassList, AllAttributes, IncludeType) :-
-    get_attributes_from_classes_helper(ClassList, [], AllAttributes, IncludeType).
-
-% Helper per iterare attraverso la lista di classi
-get_attributes_from_classes_helper([], Accumulator, Accumulator, _).
-get_attributes_from_classes_helper([ClassName|RestClasses], Accumulator, AllAttributes, IncludeType) :-
-    get_attributes(ClassName, Attributes, IncludeType),
-    add_unique_attributes(Attributes, Accumulator, NewAccumulator),
-    get_attributes_from_classes_helper(RestClasses, NewAccumulator, AllAttributes, IncludeType).
-
-% Aggiunge attributi all'accumulatore solo se non sono già presenti
-add_unique_attributes([], Accumulator, Accumulator).
-add_unique_attributes([Attr|Attrs], Accumulator, NewAccumulator) :-
+%%% add_unique_attributes/3.
+%%%
+%%% Adds unique attributes to an accumulator list, avoiding duplicates
+%%% Succeeds with an updated list of unique attributes.
+add_unique_attributes([], Acc, Acc).
+add_unique_attributes([Attr|Attrs], Acc, NewAcc) :-
     attribute_name(Attr, AttrName),
-    memberchk(AttrName=_, Accumulator), % Verifica se l'attributo è già presente
-    add_unique_attributes(Attrs, Accumulator, NewAccumulator).
-add_unique_attributes([Attr|Attrs], Accumulator, NewAccumulator) :-
+    memberchk(AttrName=_, Acc),
+    add_unique_attributes(Attrs, Acc, NewAcc).
+add_unique_attributes([Attr|Attrs], Acc, NewAcc) :-
     attribute_name(Attr, AttrName),
-    \+ memberchk(AttrName=_, Accumulator),
-    add_unique_attributes(Attrs, [Attr|Accumulator], NewAccumulator).
+    \+ memberchk(AttrName=_, Acc),
+    add_unique_attributes(Attrs, [Attr|Acc], NewAcc).
 
-% Estrae il nome dell'attributo da un'espressione attributo-valore (o attributo-tipo-valore)
+
+%%% attribute_name/2.
+%%%
+%%% Extracts the name of an attribute from its representation.
+%%% Succeeds with the name of the attribute.
 attribute_name(Name=_Value, Name).
 attribute_name(Name:_Type=_Value, Name).
 
 
-
+%%% classes_chain/2.
+%%%
+%%% Constructs a list of a class and its superclasses.
+%%% Succeeds with a list starting from the class up to its
+%%% highest ancestor.
 classes_chain(ClassName, Result) :-
     find_superclasses(ClassName, [ClassName], ReversedResult),
     reverse(ReversedResult, Result).
 
+
+%%% find_superclasses/3.
+%%%
+%%% Recursively finds all superclasses of a given class.
+%%% Succeeds with an accumulated list of superclasses.
 find_superclasses(ClassName, Accumulator, Result) :-
-    % Ottiene le superclassi della classe corrente
     class(ClassName, SuperClasses, _),
-    % Processa ogni superclasse
     process_superclasses(SuperClasses, Accumulator, Result).
 
-% Processa ogni superclasse, accumulando i risultati
-process_superclasses([], Accumulator, Accumulator).
-process_superclasses([SuperClass|SuperClasses], Accumulator, Result) :-
-    % Verifica che la superclasse non sia già stata inclusa
-    \+ member(SuperClass, Accumulator),
-    % Aggiunge la superclasse all'accumulatore
-    find_superclasses(SuperClass, [SuperClass|Accumulator], PartialResult),
-    % Continua con le restanti superclassi
+
+%%% process_superclasses/3.
+%%%
+%%% Processes each superclass, avoiding circular references.
+%%% Succeeds with a list of unique superclasses.
+process_superclasses([], Acc, Acc).
+process_superclasses([SuperClass|SuperClasses], Acc, Result) :-
+    \+ member(SuperClass, Acc),
+    find_superclasses(SuperClass, [SuperClass|Acc], PartialResult),
     process_superclasses(SuperClasses, PartialResult, Result).
-process_superclasses([SuperClass|SuperClasses], Accumulator, Result) :-
-    % Se la superclasse è già stata inclusa, salta
-    member(SuperClass, Accumulator),
-    process_superclasses(SuperClasses, Accumulator, Result).
+process_superclasses([SuperClass|SuperClasses], Acc, Result) :-
+    member(SuperClass, Acc),
+    process_superclasses(SuperClasses, Acc, Result).
 
 
-check_each_field([], _).
-check_each_field([Field|Rest], DefaultAttributesTyped) :-
+%%% check_fields_type/2.
+%%%
+%%% Checks each field in the provided list against the default
+%%% attributes with types.
+%%% Fails with an error message if a type mismatch is found.
+check_fields_type([], _).
+check_fields_type([Field|Rest], DefaultFieldsTyped) :-
     Field = (Name=Value),
-    memberchk(Name:Type=_, DefaultAttributesTyped),
+    memberchk(Name:Type=_, DefaultFieldsTyped),
     (   type_check(Value, Type)
-    ->  check_each_field(Rest, DefaultAttributesTyped)
-    ;   format("Type check failed for ~w with value ~w, expected type ~w~n", [Name, Value, Type]),
+    ->  check_fields_type(Rest, DefaultFieldsTyped)
+    ;   format(
+            string(FormattedMessage),
+            'Type check failed for ~w. value: ~w, expected type ~w',
+            [Name, Value, Type]
+        ),
+        write_colored(red, FormattedMessage),
         fail
     ).
-    
 
+
+%%% make/2, make/3.
+%%%
+%%% Creates an instance of a class with optional specified fields.
+%%% Validates the fields against the class definition,
+%%% ensuring type correctness.
+%%% Succeeds by asserting the instance into the database.
 make(InstanceName, ClassName) :-
     make(InstanceName, ClassName, []).
 
-make(InstanceName, ClassName, Fields) :-
-    % verificare non ci siano Fields illegali e che il type corrisponda a quanto dichiarato in class(...).
+make(InstanceName, ClassName, Params) :-
     classes_chain(ClassName, ChainedClasses),
-    get_attributes_from_classes(ChainedClasses, DefaultAttributesTyped, true),
-    % Typing check
-
-    !,  % Taglio per evitare il backtracking
-    check_each_field(Fields, DefaultAttributesTyped),
-
-    % sovrascrivere lista DefaultAttributes con tutti i Fields
-    get_attributes_from_classes(ChainedClasses, DefaultAttributes, false),
-    remove_overridden(DefaultAttributes, Fields, UpdatedDefaults),
-    append(Fields, UpdatedDefaults, FinalAttributes),
-
- 
+    get_fields_from_classes(
+        ChainedClasses,
+        DefaultFieldsTyped,
+        true
+    ),
+    !,
+    check_fields_type(Params, DefaultFieldsTyped),
+    get_fields_from_classes(ChainedClasses, DefaultFields, false),
+    remove_overridden(DefaultFields, Params, UpdatedFields),
+    append(Params, UpdatedFields, FinalFields),
     get_methods_from_classes(ChainedClasses, Methods),
-
     forall(
         member([Name, Args, Method], Methods),
         add_method(InstanceName, Name, Args, Method)
     ),
-
-    InstanceTerm = instance(ClassName, FinalAttributes),
+    InstanceTerm = instance(ClassName, FinalFields),
     (   atom(InstanceName)
         ->  (   clause(instance(InstanceName, _, _), true)
-            ->  fail  % L'istanza esiste già, fallisce.
-            ;   assertz(instance(InstanceName, ClassName, FinalAttributes))  % Crea l'istanza.
+            ->  fail
+            ;   assertz(
+                    instance(InstanceName, ClassName, FinalFields)
+                )
             )
         ;   var(InstanceName)
         ->  InstanceName = InstanceTerm,
             (   clause(instance(InstanceName, _, _), true)
-            ->  fail  % L'istanza esiste già, fallisce.
-            ;   assertz(instance(InstanceName, ClassName, FinalAttributes))  % Crea l'istanza.
+            ->  fail
+            ;   assertz(
+                    instance(InstanceName, ClassName, FinalFields)
+                )
             )
         ;   InstanceName = InstanceTerm
     ).
 
 
-% Aggiungi un nuovo metodo alla base di conoscenzako
+%%% add_method/3.
+%%%
+%%% Adds a method of an instance.
+%%% Constructs the method predicate and asserts it into the database.
+%%% Handles the method body using 'add_method_helper'.
 add_method(InstanceName, MethodName, Args, Actions) :-
-    % Costruisci il termine del predicato
     Predicate =.. [MethodName, InstanceName | Args],
-    % Costruisci il corpo del predicato (azione da eseguire)
     add_method_helper(InstanceName, Actions, FinalActions),
     assertz((Predicate :- FinalActions)).
 
 
+%%% add_method_helper/2.
+%%%
+%%% Helps in constructing the method body for 'add_method'.
+%%% It modifies the method's actions to include the instance
+%%% name when necessary.
 add_method_helper(InstanceName, Method, FinalMethod) :-
-    % Modifico il metodo in array di istruzioni
     term_to_list(Method, MethodAsListReversed),
     reverse(MethodAsList,MethodAsListReversed),
-    % Per ogni istruzione in MethodAsList eseguo la replace_this_by_list
-    maplist(replace_this_in_predicate(InstanceName), MethodAsList, FinalMethodAsList),
-    % Rimodifico la MethodAsList come Method.
+    maplist(
+        replace_this_in_predicate(InstanceName),
+        MethodAsList,
+        FinalMethodAsList
+    ),
     list_to_term(FinalMethodAsList, FinalMethod).
 
 
+%%% replace_this_in_predicate/2.
+%%%
+%%% Replaces occurrences of 'this' with the instance name
+%%% in a predicate.
+%%% Used in method definitions to refer to the current instance.
 replace_this_in_predicate(InstanceName, Predicate, FinalPredicate) :-
-    % Predicato -> Lista se non già lista.
     (   is_list(Predicate)
     ->  Lista = Predicate
     ;   Predicate =.. Lista
     ),
-    % Sostituisco
-    maplist(replace_this(InstanceName), Lista, ResultList),
+    maplist(replace_this_in_value(InstanceName), Lista, ResultList),
     (   is_list(Predicate)
     ->  FinalPredicate = ResultList
     ;   FinalPredicate =.. ResultList
     ).
-    % Faccio ritornare Lista a predicato.
 
 
-replace_this(InstanceName, Value, Result) :-
-(   atom_or_string(Value)
-->  (   Value = this
-    ->  Result = InstanceName
-    ;   Result = Value
-    )
-;   (   var(Value)
-    ->  Result = Value
-    ;   replace_this_in_predicate(InstanceName, Value, Result)
-    )
-).
+%%% replace_this_in_value/2.
+%%%
+%%% Helper for 'replace_this_in_predicate'.
+%%% Replaces 'this' with the instance name in a value,
+%%% recursively handling complex structures.
+replace_this_in_value(InstanceName, Value, Result) :-
+    (   atom_or_string(Value)
+    ->  (   Value = this
+        ->  Result = InstanceName
+        ;   Result = Value
+        )
+    ;   (   var(Value)
+        ->  Result = Value
+        ;   replace_this_in_predicate(InstanceName, Value, Result)
+        )
+    ).
 
+
+%%% atom_or_string/1.
+%%%
+%%% Checks if a value is either an atom or a string.
 atom_or_string(Value) :-
-(   atom(Value)
-;   string(Value)
-).
+    (   atom(Value)
+    ;   string(Value)
+    ).
 
-% Predicato principale per convertire un termine complesso in una lista di termini
+
+%%% term_to_list/2.
+%%%
+%%% Converts a complex term into a list of terms.
+%%% Used for processing method bodies in 'add_method_helper'.
 term_to_list(Term, List) :-
     term_to_list_helper(Term, [], List).
 
-% Helper ricorsivo per gestire la conversione
+
+%%% term_to_list_helper/3.
+%%%
+%%% Recursive helper for 'term_to_list'.
+%%% Breaks down complex terms into their constituent parts.
 term_to_list_helper((Term1, Term2), Accumulator, List) :-
-    !,  % Taglio per evitare il backtracking
+    !,
     term_to_list_helper(Term1, Accumulator, NewAccumulator),
     term_to_list_helper(Term2, NewAccumulator, List).
 term_to_list_helper(Term, Accumulator, [Term|Accumulator]).
 
-% Predicato principale per convertire una lista di termini in un termine complesso
+
+%%% list_to_term/2.
+%%%
+%%% Converts a list of terms back into a complex term.
+%%% Reverse of 'term_to_list', used in 'add_method_helper'.
 list_to_term(List, Term) :-
     list_to_term_helper(List, Term).
 
-% Helper ricorsivo per costruire il termine complesso dalla lista
-list_to_term_helper([LastTerm], LastTerm) :- !.  % Caso base: l'ultimo termine nella lista
+
+%%% list_to_term_helper/3.
+%%%
+%%% Recursive helper for 'list_to_term'.
+%%% Revert list into complex terms.
+list_to_term_helper([LastTerm], LastTerm) :- !.
 list_to_term_helper([Term1 | Rest], (Term1, CompoundTerm)) :-
     list_to_term_helper(Rest, CompoundTerm).
 
 
+%%% is_class/1.
+%%%
+%%% Checks if a given name corresponds to a defined class.
+is_class(ClassName) :- class(ClassName, _, _).
 
-    
-is_class(ClassName) :-
-    class(ClassName, _, _).
 
-
-is_instance(Instance) :-
-    instance(Instance, _, _).
-
-is_instance(Value, ClassName) :-
-    instance(Value, InstanceClass, _),
+%%% is_instance/1, is_instance/2.
+%%%
+%%% Checks if a given term is an instance of a class.
+%%% 'is_instance/2' additionally checks if it's
+%%% an instance of a specific class.
+is_instance(Instance) :- instance(Instance, _, _).
+is_instance(Instance, ClassName) :-
+    instance(Instance, InstanceClass, _),
     is_subclass(InstanceClass, ClassName).
 
+
+%%% is_subclass/2.
+%%%
+%%% Determines if one class is a subclass of another.
+%%% Checks direct and indirect (transitive) subclass relationships.
 is_subclass(Class, Class).
 is_subclass(SubClass, Class) :-
     class(SubClass, SuperClasses, _),
@@ -312,23 +441,38 @@ is_subclass(SubClass, Class) :-
     is_subclass(SuperClass, Class).
 
 
+%%% inst/2.
+%%%
+%%% Retrieves an instance's details given its name.
+%%% Useful for querying instances in the database.
 inst(InstanceName, Instance) :-
     atom(InstanceName),
     instance(InstanceName, ClassName, Params),
     Instance = instance(InstanceName, ClassName, Params).
 
 
-
+%%% field/3.
+%%%
+%%% Retrieves the value of a specified field from an instance.
 field(Instance, AttributeName, Value) :-
     instance(Instance, _, Attributes),
     member(AttributeName=Value, Attributes).
 
-% fieldx predicate extracts a value from an instance by traversing a chain of fields
+
+%%% fieldx/3.
+%%%
+%%% Extended version of 'field/3'.
+%%% Allows accessing nested fields within an instance
+%%% or its related instances.
 fieldx(Instance, [FieldName|FieldNames], Result) :-
     field(Instance, FieldName, IntermediateResult),
     fieldx_recursive(IntermediateResult, FieldNames, Result).
 
-% Recursive helper for fieldx to handle multiple fields
+
+%%% fieldx_recursive/3.
+%%%
+%%% Recursive helper for 'fieldx'.
+%%% Traverses through nested fields to retrieve the final value.
 fieldx_recursive(Intermediate, [], Intermediate).
 fieldx_recursive(Intermediate, [FieldName|FieldNames], Result) :-
     field(Intermediate, FieldName, NextIntermediate),
@@ -407,7 +551,3 @@ init :-
 
     
 % fieldx(obj1, [other, name, name], R).
-% field(I1, s1, V1),
-% field(V1, s2, V2),
-% field(V2, s3, R),
-% fieldx(I1, [s1, s2, s3], R).
