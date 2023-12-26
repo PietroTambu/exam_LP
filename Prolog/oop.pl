@@ -54,7 +54,6 @@ assert_part(ClassName, method(MethodName, ArgList, Form)) :-    % assert method
 
 
 
-
 remove_overridden([], _, []).
 remove_overridden([DefAttr|DefAttrs], Fields, Result) :-
     DefAttr = (Name=_),
@@ -63,6 +62,7 @@ remove_overridden([DefAttr|DefAttrs], Fields, Result) :-
     ;   Result = [DefAttr|Rest],
         remove_overridden(DefAttrs, Fields, Rest)
     ).
+
 
 get_attributes(ClassName, Attributes, IncludeType) :-
     (   IncludeType
@@ -77,6 +77,39 @@ get_attributes(ClassName, Attributes, IncludeType) :-
             Attributes
         )
     ).
+
+get_methods(ClassName, Methods) :-
+    findall(
+        [Name, Args, Value],
+        class_method(ClassName, Name, Args, Value),
+        Methods
+    ).
+
+
+get_methods_from_classes(ClassList, AllAttributes) :-
+    get_methods_from_classes_helper(ClassList, [], AllAttributes).
+% Helper per iterare attraverso la lista di classi
+get_methods_from_classes_helper([], Accumulator, Accumulator).
+get_methods_from_classes_helper([ClassName|RestClasses], Accumulator, AllAttributes) :-
+    get_methods(ClassName, Attributes),
+    add_unique_methods(Attributes, Accumulator, NewAccumulator),
+    get_methods_from_classes_helper(RestClasses, NewAccumulator, AllAttributes).
+
+% Aggiunge metodi all'accumulatore solo se non sono già presenti
+add_unique_methods([], Accumulator, Accumulator).
+add_unique_methods([Attr|Attrs], Accumulator, NewAccumulator) :-
+    Attr = [Name, Args, _],
+    memberchk([Name, Args, _], Accumulator), % Verifica se il metodo è già presente
+    add_unique_methods(Attrs, Accumulator, NewAccumulator).
+add_unique_methods([Attr|Attrs], Accumulator, NewAccumulator) :-
+    Attr = [Name, Args, _],
+    \+ memberchk([Name, Args, _], Accumulator),
+    add_unique_methods(Attrs, [Attr|Accumulator], NewAccumulator).
+
+% Estrae il nome del metodo da un'espressione attributo-valore (o attributo-tipo-valore)
+methods_name(Name=_Value, Name).
+methods_name(Name:_Type=_Value, Name).
+
 
 
 
@@ -107,9 +140,6 @@ attribute_name(Name:_Type=_Value, Name).
 
 
 
-
-
-
 classes_chain(ClassName, Result) :-
     find_superclasses(ClassName, [ClassName], ReversedResult),
     reverse(ReversedResult, Result).
@@ -135,9 +165,16 @@ process_superclasses([SuperClass|SuperClasses], Accumulator, Result) :-
     process_superclasses(SuperClasses, Accumulator, Result).
 
 
-
-
-
+check_each_field([], _).
+check_each_field([Field|Rest], DefaultAttributesTyped) :-
+    Field = (Name=Value),
+    memberchk(Name:Type=_, DefaultAttributesTyped),
+    (   type_check(Value, Type)
+    ->  check_each_field(Rest, DefaultAttributesTyped)
+    ;   format("Type check failed for ~w with value ~w, expected type ~w~n", [Name, Value, Type]),
+        fail
+    ).
+    
 
 make(InstanceName, ClassName) :-
     make(InstanceName, ClassName, []).
@@ -147,13 +184,9 @@ make(InstanceName, ClassName, Fields) :-
     classes_chain(ClassName, ChainedClasses),
     get_attributes_from_classes(ChainedClasses, DefaultAttributesTyped, true),
     % Typing check
-    forall(
-        (member(Field, Fields), Field = (Name=Value)),
-        (
-            memberchk(Name:Type=_, DefaultAttributesTyped),
-            type_check(Value, Type)
-        )
-    ),
+
+    !,  % Taglio per evitare il backtracking
+    check_each_field(Fields, DefaultAttributesTyped),
 
     % sovrascrivere lista DefaultAttributes con tutti i Fields
     get_attributes_from_classes(ChainedClasses, DefaultAttributes, false),
@@ -161,10 +194,17 @@ make(InstanceName, ClassName, Fields) :-
     append(Fields, UpdatedDefaults, FinalAttributes),
 
     % Add method: TODO: istanziare metodi della ClassName e di tutte le sottoclassi. attenzione a overriding. Non istanziare tutto a caso...
+    % forall(
+    %     class_method(ClassName, Name, Args, Method),
+    %     add_method(InstanceName, Name, Args, Method)
+    % ),
+    get_methods_from_classes(ChainedClasses, Methods),
+
     forall(
-        class_method(ClassName, Name, Args, Method),
+        member([Name, Args, Method], Methods),
         add_method(InstanceName, Name, Args, Method)
     ),
+    % forall((member(Number, [1, 2])), writeln(Number)),
 
     InstanceTerm = instance(ClassName, FinalAttributes),
     (   atom(InstanceName)
@@ -182,7 +222,7 @@ make(InstanceName, ClassName, Fields) :-
     ).
 
 
-% Aggiungi un nuovo metodo alla base di conoscenza
+% Aggiungi un nuovo metodo alla base di conoscenzako
 add_method(InstanceName, MethodName, Args, Actions) :-
     % Costruisci il termine del predicato
     Predicate =.. [MethodName, InstanceName | Args],
@@ -293,11 +333,12 @@ field(Instance, AttributeName, Value) :-
 
 init :-
     write_colored(green, '\nIl file oop.pl è stato caricato correttamente.\n'), nl,
-    def_class(person, [], [field(age, 21, integer), field(name, "person_name")]),
+    def_class(person, [], [ field(name, 'Eve'), field(age, 21, integer)]),
     def_class(
         student,
         [person],
         [
+            field(name, 'Eva Lu Ator'),
             field(university, 'Berkeley'),
             method(
                 talk,
@@ -310,20 +351,6 @@ init :-
                     field(this, age, A),
                     writeln(A)
                 )
-            ),
-            method(
-                to_string,
-                [ResultingString],
-                (
-                    with_output_to(
-                        string(ResultingString),
-                        (
-                            field(this, name, N),
-                            field(this, university, U),
-                            format('#<~w student ~w>', [U, N])
-                        )
-                    )
-                )
             )
         ]
     ),
@@ -331,12 +358,34 @@ init :-
         studente_bicocca,
         [student],
         [
-            field(studentID, 894628, integer),
-            field(name, "student_bicocca_name")
+            field('university', 'UNIMIB'),
+            method(
+                to_string,
+                [ResultingString],
+                with_output_to(
+                        string(ResultingString),
+                        (
+                            field(this, name, N),
+                            field(this, university, U),
+                            format('#<~w student ~w>', [U, N])
+                        )
+                    )
+                
+            ),
+            method(
+                talk,
+                [],
+                (
+                    write('Mi chiamo '),
+                    field(this, name, N),
+                    writeln(N),
+                    writeln('e studio alla Bicocca.')
+                )
+            )
         ]
-    ),
-    make(p, person, [age=99, name="custom_name"]),
-    make(s, student),
-    make(sb, studente_bicocca, [name="ssss", age=999]).
+    ).
+    % make(p, person, [age=99, name="custom_name"]),
+    % make(s, student),
+    % make(sb, studente_bicocca, [name="ssss", age=999]).
 
     
