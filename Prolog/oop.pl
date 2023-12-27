@@ -4,7 +4,8 @@
 %%%%
 %%%% Tamburini Pietro 894628
 %%%%
-clear :- shell('clear').
+
+
 %%% color/2
 %%%
 %%% Returns the ANSI color code string for a given color.
