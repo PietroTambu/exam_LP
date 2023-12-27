@@ -4,7 +4,7 @@
 %%%%
 %%%% Tamburini Pietro 894628
 %%%%
-
+clear :- shell('clear').
 %%% color/2
 %%%
 %%% Returns the ANSI color code string for a given color.
@@ -54,7 +54,8 @@ def_class(ClassName, Parents) :-
 def_class(ClassName, Parents, Parts) :-
     % TODO: Check existence of Parents (Classes []) + not already exist
     assertz(class(ClassName, Parents, Parts)),
-    assert_parts(ClassName, Parts).
+    assert_parts(ClassName, Parts),
+    !.
 
 
 %%% assert_parts/2.
@@ -299,7 +300,8 @@ make(InstanceName, ClassName, Params) :-
                 )
             )
         ;   InstanceName = InstanceTerm
-    ).
+    ),
+    !.
 
 
 %%% add_method/3.
@@ -412,7 +414,7 @@ list_to_term_helper([Term1 | Rest], (Term1, CompoundTerm)) :-
 %%% is_class/1.
 %%%
 %%% Checks if a given name corresponds to a defined class.
-is_class(ClassName) :- class(ClassName, _, _).
+is_class(ClassName) :- atom(ClassName), class(ClassName, _, _).
 
 
 %%% is_instance/1, is_instance/2.
@@ -420,17 +422,17 @@ is_class(ClassName) :- class(ClassName, _, _).
 %%% Checks if a given term is an instance of a class.
 %%% 'is_instance/2' additionally checks if it's
 %%% an instance of a specific class.
-is_instance(Instance) :- instance(Instance, _, _).
+is_instance(Instance) :- instance(Instance, _, _), !.
 is_instance(Instance, ClassName) :-
     instance(Instance, InstanceClass, _),
-    is_subclass(InstanceClass, ClassName).
+    is_subclass(InstanceClass, ClassName),
+    !.
 
 
 %%% is_subclass/2.
 %%%
 %%% Determines if one class is a subclass of another.
 %%% Checks direct and indirect (transitive) subclass relationships.
-is_subclass(Class, Class).
 is_subclass(SubClass, Class) :-
     class(SubClass, SuperClasses, _),
     member(Class, SuperClasses).
@@ -455,7 +457,8 @@ inst(InstanceName, Instance) :-
 %%% Retrieves the value of a specified field from an instance.
 field(Instance, AttributeName, Value) :-
     instance(Instance, _, Attributes),
-    member(AttributeName=Value, Attributes).
+    member(AttributeName=Value, Attributes),
+    !.
 
 
 %%% fieldx/3.
@@ -465,7 +468,8 @@ field(Instance, AttributeName, Value) :-
 %%% or its related instances.
 fieldx(Instance, [FieldName|FieldNames], Result) :-
     field(Instance, FieldName, IntermediateResult),
-    fieldx_recursive(IntermediateResult, FieldNames, Result).
+    fieldx_recursive(IntermediateResult, FieldNames, Result),
+    !.
 
 
 %%% fieldx_recursive/3.
