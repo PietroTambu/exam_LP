@@ -1,3 +1,4 @@
+
 (defparameter *classes-specs* (make-hash-table))
 (defvar *instance-id-counter* 0)
 (defvar *instance-map* (make-hash-table))
@@ -11,7 +12,6 @@
 
 (defun define-method (class-name method-name method-lambda)
   (setf (gethash (list class-name method-name) *method-map*) method-lambda))
-
 
 (defun add-instance (instance)
   (incf *instance-id-counter*)
@@ -35,7 +35,6 @@
         (error "Error: field value ~A (~A) doesn't match type (~A)"
                field-name field-value field-type)))))
 
-
 (defun get-attributes (class-name)
     (let ((attributes (third (class-spec class-name))))
         attributes))
@@ -44,18 +43,6 @@
     (let ((methods (fourth (class-spec class-name))))
         methods))
 
-
-(defun ensure-in-list (nested-list list)
-    (let
-        ((key-name (first list)))
-        (if
-            (find key-name nested-list :key #'first)
-            nested-list
-            (cons list nested-list)
-        )
-    )
-)
-
 (defun get-parents (class-name)
   (let ((class-specification (class-spec class-name)))
     (when class-specification
@@ -63,7 +50,6 @@
         (nconc (copy-list parents)
                (loop for parent in parents
                      nconc (get-parents parent)))))))
-
 
 (defun get-parents-list-sorted (classes-name)
   (remove-duplicates (loop for class-name in classes-name
@@ -77,140 +63,108 @@
                       (t field))))
 
 (defun check-subtype-integrity (parents fields)
-    (loop for parent in (append parents (get-parents-list-sorted parents))
-        do (loop for attribute in (get-attributes parent)
-                 do (let
-                        (
-                            (matching-attribute (find (first attribute) fields :key #'first))
-                        )
-                        (unless
-                            (or (not matching-attribute)
-                                (subtypep (third matching-attribute) (third attribute))
-                            )
-                            (error
-                                "Error: type of slot ~S is a supertype of inherited type"
-                                (first attribute)
-                            )
-                        )
-                    )
-            )
-    ))
+  (loop for parent in (append parents (get-parents-list-sorted parents))
+    do (loop for attribute in (get-attributes parent)
+      do (let ((matching-attribute 
+                (find (first attribute) fields :key #'first)))
+           (unless (or (not matching-attribute)
+                       (subtypep (third matching-attribute)
+                                 (third attribute)))
+             (error "Error: type of slot ~S is a supertype of 
+                     inherited type" (first attribute)))))))
 
 (defun def-class (class-name parents &rest parts)
-    (let*
-        (
-            (fields (loop for part in parts
-                    when (eq (first part) 'fields)
-                    nconc (rest part))
-            )
-            (methods (loop for part in parts
-                    when (eq (first part) 'methods)
-                    nconc (rest part))
-            )
-            (final-fields
-                (ensure-field-types
-                    (append fields 
-                        (loop for parent in (nconc parents (get-parents-list-sorted parents))
-                            nconc (loop for attribute in (get-attributes parent)
-                                unless (find (first attribute) fields :key #'first)
-                                collect attribute
-                            )
-                        )
-                    )
-                )
-            )
-            (final-methods
-                (append methods 
-                    (loop for parent in (nconc parents (get-parents-list-sorted parents))
-                        nconc (loop for method in (get-methods parent)
-                            unless (find (first method) methods :key #'first)
-                            collect method
-                        )
-                    )
-                )
-            )
-        )
-        (check-subtype-integrity parents fields)
-        (check-fields-types fields)
-        (add-class-spec class-name `(,class-name ,parents ,final-fields ,final-methods))
-        class-name
-    ))
-
-
+  (let* ((fields (loop for part in parts
+                       when (eq (first part) 'fields)
+                       nconc (rest part)))
+         (methods (loop for part in parts
+                        when (eq (first part) 'methods)
+                        nconc (rest part)))
+         (final-fields (ensure-field-types
+                        (append fields 
+                                (loop for parent in 
+                                      (nconc parents 
+                                             (get-parents-list-sorted parents))
+                                      nconc (loop for attribute in 
+                                                  (get-attributes parent)
+                                                  unless (find (first attribute)
+                                                               fields 
+                                                               :key #'first)
+                                                  collect attribute)))))
+         (final-methods (append methods 
+                                (loop for parent in 
+                                      (nconc parents 
+                                             (get-parents-list-sorted parents))
+                                      nconc (loop for method in 
+                                                  (get-methods parent)
+                                                  unless (find (first method)
+                                                               methods 
+                                                               :key #'first)
+                                                  collect method)))))
+    (check-subtype-integrity parents fields)
+    (check-fields-types fields)
+    (add-class-spec class-name `(,class-name ,parents 
+                                             ,final-fields ,final-methods))
+    class-name))
 
 (defun method-dispatcher (method-name)
-    (setf (fdefinition method-name)
+  (setf (fdefinition method-name)
         (lambda (&rest params)
-            (let (
-                    (class-name (first (get-instance (first params))))
-                )
-                (let (
-                        (method-lambda (gethash (list class-name method-name) *method-map*))
-                    )
-                    (if method-lambda
-                        (apply method-lambda params)
-                        (error "Error: Method ~A not found in class ~A" method-name class-name))
-                    )
-            )
-        )
-    )
-)
+          (let ((class-name (first (get-instance (first params)))))
+            (let ((method-lambda 
+                   (gethash (list class-name method-name) *method-map*)))
+              (if method-lambda
+                  (apply method-lambda params)
+                  (error "Error: Method ~A not found in class ~A" 
+                         method-name class-name)))))))
+
 
 (defun make (class-name &rest parts)
-
-    (unless (class-spec class-name)
+  (unless (class-spec class-name)
     (error "Error: class ~A doesn't exist" class-name))
 
-    (let*
-        (
-            (classes-chain
-                (append (get-parents-list-sorted (list class-name)) (list class-name))
-            )
-            (class-fields
-                (get-attributes class-name)
-            )
-            (fields (loop for (key value) on parts by #'cddr
+  (let* ( (classes-chain (append (get-parents-list-sorted (list class-name))
+                                (list class-name)))
+          (class-fields (get-attributes class-name))
+          (fields (loop for (key value) on parts by #'cddr
                       collect (list key value)))
-            (missing-fields
-                (remove-duplicates (loop for class in classes-chain
-                    nconc (loop for attribute in (get-attributes class)
-                        unless (find (first attribute) fields :key #'first)
-                        collect (list (first attribute) (second attribute))
-                    )
-                ) :key #'first :test #'equal)
-            )
-        )
+          (missing-fields (remove-duplicates
+                            (loop for class in classes-chain nconc
+                                  (loop for attribute in (get-attributes class)
+                                        unless (find (first attribute) fields
+                                                      :key #'first)
+                                        collect (list (first attribute)
+                                                      (second attribute))))
+                            :key #'first :test #'equal)))
+        
         (loop for field in fields
-            do (let ((class-field (find (first field) class-fields :key #'first)))
-                (unless class-field
-                    (error "Error: Illegal attribute ~A found" (first field)))
+              do (let ((class-field (find (first field) class-fields
+                                          :key #'first)))
+                    (unless class-field
+                      (error "Error: Illegal attribute ~A found"
+                              (first field)))
                     (unless (typep (second field) (third class-field))
-                        (error "Error: value ~S for field ~S is not of type ~S." (second field) (first class-field) (third class-field)))))
+                      (error "Error: value ~S for field ~S is not of type ~S."
+                              (second field) (first class-field)
+                              (third class-field)))))
 
-        ; check missing fields value not null ?
         (loop for missing-field in missing-fields
-            unless (second missing-field)
-            do (error "Error: You must provide a value for NIL default field ~A." missing-field)
-        )
+              unless (second missing-field)
+              do (error "Error: You must provide a value for NIL default
+                        field ~A." missing-field))
 
         (loop for method in (get-methods class-name)
-            do (let*
-                    (
-                        (method-name (first method))
+              do (let* ((method-name (first method))
                         (method-params (cons 'this (second method)))
-                        (method-body (third method))
-                    )
+                        (method-body (third method)))
                     (define-method class-name method-name
-                        (eval `(lambda ,method-params ,method-body))
-                    )
-                    (method-dispatcher method-name)
-                )
-        )
+                      (eval `(lambda ,method-params ,method-body)))
+                    (method-dispatcher method-name)))
         
-        ; ritorno una lista da salvare con deparameter.
-        (add-instance (list class-name (append fields missing-fields) (get-methods class-name)))
-    )
-)
+        (add-instance (list class-name (append fields missing-fields)
+                            (get-methods class-name)))))
+
+
 
 
 (defun is-class (class-name)
