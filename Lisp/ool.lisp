@@ -202,26 +202,32 @@
 
 ;;; (is-instance <value> [<class-name>]) => T/NIL
 ;;; 
-;;; Determines if an object is an instance of a given class or any of its parent 
-;;; classes, with an option to check against any class.
-(defun is-instance (instance &optional (class-name T))
-  (and (not( null (get-instance instance )))
-       (or (eq class-name T)
-           (not (null (member class-name
-                              (get-parents (first (get-instance instance)))
-                              :test #'eql))))))
+;;; Determines if a value is an instance of given parent class/es.
+(defun is-instance (instance &optional (class-names 'T))
+  (and (not (null (get-instance instance)))
+       (or (eq class-names 'T)
+           (let ((parents (get-parents (first (get-instance instance)))))
+             (if (listp class-names)
+                 (loop for class-name in class-names
+                       always (member class-name parents :test #'eql))
+                 (member class-names parents :test #'eql))))))
 
 ;;; (field <instance> <field-name>) => <field-value | error>
 ;;;
 ;;; Retrieves the value of a specified field from an instance,
 ;;; raising an error if the field is not found.
 (defun field (instance field-name)
-  (let ((field-found (find field-name
-                           (second (get-instance instance))
-                           :key #'first)))
-    (unless field-found
-      (error "Error: unknown field."))
-    (second field-found)))
+  ;; Valuta instance se non è un numero
+  (let ((real-instance (if (numberp instance)
+                           instance
+                           (symbol-value instance))))
+    (let ((field-found (find field-name
+                             (second (get-instance real-instance))
+                             :key #'first)))
+      (unless field-found
+        (error "Error: unknown field."))
+      (second field-found))))
+
 
 ;;; (field* <instance> <field-name>+) => <field-value | error>
 ;;; Extended version of field.
@@ -235,46 +241,33 @@
       (error "Error: no field names provided")))
 
 
-;;
-; (def-class 'person nil 
-;     '(fields (name "Eve") (age 21 integer))
-; )
+(def-class 'person nil 
+    '(fields (name "Eve") (age 21 integer))
+)
 
-; (def-class 'student '(person)
-;     '(fields ('name "Eva Lu Ator") (university "Berkeley" string))
-;     '(methods
-;         (talk (&optional (out *standard-output*)) 
-;             (format out "My name is ~A~%My age is ~D~%"
-;                 (field this 'name)
-;                 (field this 'age)
-;             )
-;         )
-;     )
-; )
+(def-class 'student '(person)
+    '(fields ('name "Eva Lu Ator") (university "Berkeley" string))
+    '(methods
+        (talk (&optional (out *standard-output*)) 
+            (format out "My name is ~A~%My age is ~D~%"
+                (field this 'name)
+                (field this 'age)
+            )
+        )
+    )
+)
 
-; (def-class 'studente-bicocca '(student)
-;     '(methods 
-;         (talk ()
-;             (format t "Mi chiamo ~A, e studio alla Bicocca~%"
-;             (field this 'name))
-;         )
-;     )
-;     '(fields
-;         (university "UNIMIB")
-;     )
-; )
-
-; (def-class 'studente_bicocca '(student)
-;     '(fields (university "UNIMIB" string))
-;     '(methods
-;         (talk (word)
-;             (format *STANDARD-OUTPUT* "PARAMS: ~A~%My age is ~D~%"
-;                 word
-;                 (field this 'age)
-;             )
-;         )    
-;     )
-; )
+(def-class 'studente_bicocca '(student)
+    '(fields (university "UNIMIB" string))
+    '(methods
+        (talk (word)
+            (format *STANDARD-OUTPUT* "PARAMS: ~A~%My age is ~D~%"
+                word
+                (field this 'age)
+            )
+        )    
+    )
+)
 
 ; (defparameter p (make 'person 'name "person name"))
 ; (defparameter sb (make 'studente_bicocca 'name "studente bicocca name"))

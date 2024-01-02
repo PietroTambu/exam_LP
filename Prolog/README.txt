@@ -1,4 +1,4 @@
-Prolog project E1P OOP
+Prolog project E1P
 
 Author:
     Tamburini Pietro 894628
