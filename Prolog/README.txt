@@ -12,8 +12,9 @@ documentation:
 def_class/2:
 def_class/3:
 
+ -  This predicate will define a class structure based on name, parents,
+    attribute and methods.
  -  A field type check will be performed during class definition.
- -  In methods use 'this' as alias for future instance value.
 
     usage:
         def_class(
@@ -65,9 +66,9 @@ make/2:
 make/3:
 
  -  creates a new instance of a class
- -  fields of the class that are not specified will be instantiated
+ -  fields of the class that are not specified will be set
     with the default value.
- -  A field type check will be performed during class instantiation.
+ -  A field type check will be performed during instantiation.
  -  Invalid field names will cause a failure.
 
     usage:
