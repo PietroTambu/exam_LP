@@ -194,13 +194,13 @@
         (add-instance (list class-name (append fields missing-fields)
                             (get-methods class-name)))))
 
-;;; (is-class <class-name>) => T/NIL (alias is-class-p)
+;;; (is-class <class-name>) => T/NIL
 ;;;
 ;;; Checks if a given class name corresponds to a defined class.
 (defun is-class (class-name)
   (not (null (class-spec class-name))))
 
-;;; (is-instance <value> [<class-name>]) => T/NIL (alias is-instance-p)
+;;; (is-instance <value> [<class-name>]) => T/NIL
 ;;; 
 ;;; Determines if an object is an instance of a given class or any of its parent 
 ;;; classes, with an option to check against any class.

@@ -5,14 +5,6 @@
 %%%% Tamburini Pietro 894628
 %%%%
 
-:- dynamic counter/1.
-
-increment_counter :-
-    counter(Val),
-    NewVal is Val + 1,
-    retract(counter(Val)),
-    assert(counter(NewVal)).
-
 %%% color/2
 %%%
 %%% Returns the ANSI color code string for a given color.
@@ -291,27 +283,17 @@ make(InstanceName, ClassName, Params) :-
         member([Name, Args, Method], Methods),
         add_method(InstanceName, Name, Args, Method)
     ),
-
-    counter(InstanceTerm),
     (   atom(InstanceName)
         ->  (   clause(instance(InstanceName, _, _), true)
             ->  fail
             ;   assertz(
                     instance(InstanceName, ClassName, FinalFields)
-                )
+                ),
+                !
             )
         ;   var(InstanceName)
-        ->  InstanceName = InstanceTerm,
-            (   clause(instance(InstanceName, _, _), true)
-            ->  fail
-            ;   increment_counter,
-                assertz(
-                    instance(InstanceName, ClassName, FinalFields)
-                )
-            )
-        ;   InstanceName = InstanceTerm
-    ),
-    !.
+            ->  instance(InstanceName, ClassName, FinalFields)
+    ).
 
 %%% add_method/3.
 %%%
@@ -495,8 +477,6 @@ fieldx_recursive(Intermediate, [FieldName|FieldNames], Result) :-
 :- initialization(init).
 
 init :-
-    retractall(counter(_)),
-    assert(counter(0)),
     write_colored(green, '\nIl file oop.pl è stato caricato correttamente.\n'), nl,
     def_class(person, [], [ field(name, 'Eve'), field(age, 21, integer)]),
     def_class(
