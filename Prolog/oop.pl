@@ -5,6 +5,13 @@
 %%%% Tamburini Pietro 894628
 %%%%
 
+:- dynamic counter/1.
+
+increment_counter :-
+    counter(Val),
+    NewVal is Val + 1,
+    retract(counter(Val)),
+    assert(counter(NewVal)).
 
 %%% color/2
 %%%
@@ -284,7 +291,8 @@ make(InstanceName, ClassName, Params) :-
         member([Name, Args, Method], Methods),
         add_method(InstanceName, Name, Args, Method)
     ),
-    InstanceTerm = instance(ClassName, FinalFields),
+
+    counter(InstanceTerm),
     (   atom(InstanceName)
         ->  (   clause(instance(InstanceName, _, _), true)
             ->  fail
@@ -296,14 +304,14 @@ make(InstanceName, ClassName, Params) :-
         ->  InstanceName = InstanceTerm,
             (   clause(instance(InstanceName, _, _), true)
             ->  fail
-            ;   assertz(
+            ;   increment_counter,
+                assertz(
                     instance(InstanceName, ClassName, FinalFields)
                 )
             )
         ;   InstanceName = InstanceTerm
     ),
     !.
-
 
 %%% add_method/3.
 %%%
@@ -487,6 +495,8 @@ fieldx_recursive(Intermediate, [FieldName|FieldNames], Result) :-
 :- initialization(init).
 
 init :-
+    retractall(counter(_)),
+    assert(counter(0)),
     write_colored(green, '\nIl file oop.pl è stato caricato correttamente.\n'), nl,
     def_class(person, [], [ field(name, 'Eve'), field(age, 21, integer)]),
     def_class(

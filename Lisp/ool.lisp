@@ -1,48 +1,63 @@
+;;;; -*- Mode: Lisp -*-
 
+;;;; ool.lisp
+;;;;
+;;;; Tamburini Pietro 894628
+;;;;
+
+;;; Global variables
 (defparameter *classes-specs* (make-hash-table))
 (defvar *instance-id-counter* 0)
 (defvar *instance-map* (make-hash-table))
 (defvar *method-map* (make-hash-table :test #'equal))
 
+;;; Add key:value to *classes-specs*
 (defun add-class-spec (name class-spec)
   (setf (gethash name *classes-specs*) class-spec))
 
+;;; Retrieve value from *classes-specs*
 (defun class-spec (name)
   (gethash name *classes-specs*))
 
+;;; Add method to key:value *method-map*
 (defun define-method (class-name method-name method-lambda)
   (setf (gethash (list class-name method-name) *method-map*) method-lambda))
 
+;;; Add a value to *instance-map*
 (defun add-instance (instance)
   (incf *instance-id-counter*)
   (setf (gethash *instance-id-counter* *instance-map*) instance)
   *instance-id-counter*)
 
-(defun instance-exist (id)
-  (not (null (gethash id *instance-map*))))
-
+;;; Retrieve instance from *instance-map*
 (defun get-instance (id)
   (gethash id *instance-map*))
 
+;;; Checks the type compatibility of each field in a list of fields.
+;;; Raises an error if a field's value does not match its declared type.
 (defun check-fields-types (fields)
   (dolist (field fields)
     (let ((field-name (first field))
           (field-value (second field))
           (field-type (third field)))
       (when (and (> (length field) 2)
-                 (not (or (gethash field-type *classes-specs*)
+                 (not (or (class-spec field-type)
                           (ignore-errors (typep field-value field-type)))))
         (error "Error: field value ~A (~A) doesn't match type (~A)"
                field-name field-value field-type)))))
 
+;;; Retrieves the attributes of a defined class
 (defun get-attributes (class-name)
     (let ((attributes (third (class-spec class-name))))
         attributes))
 
+;;; Retrieves the methods of a defined class
 (defun get-methods (class-name)
     (let ((methods (fourth (class-spec class-name))))
         methods))
 
+;;; Retrieves all parent classes of a given class, including indirect ancestors,
+;;; by recursively traversing the class hierarchy. (left-handed)
 (defun get-parents (class-name)
   (let ((class-specification (class-spec class-name)))
     (when class-specification
@@ -51,17 +66,23 @@
                (loop for parent in parents
                      nconc (get-parents parent)))))))
 
+;;; Generates a sorted list of unique parent classes for a list of classes, 
+;;; removing any duplicates.
 (defun get-parents-list-sorted (classes-name)
   (remove-duplicates (loop for class-name in classes-name
                            nconc (get-parents class-name))
                      :from-end t))
 
+;;; Ensures each field in a list has three elements: name, value, and a type. 
+;;; Adds default values and types if none are provided.
 (defun ensure-field-types (fields)
   (loop for field in fields
         collect (cond ((= (length field) 1) (append field '(NIL T)))
                       ((= (length field) 2) (append field '(T)))
                       (t field))))
 
+;;; Validates that field types in a class are subtypes of the same fields in
+;;; its parent classes, raising an error for any type mismatches.
 (defun check-subtype-integrity (parents fields)
   (loop for parent in (append parents (get-parents-list-sorted parents))
     do (loop for attribute in (get-attributes parent)
@@ -73,41 +94,9 @@
              (error "Error: type of slot ~S is a supertype of 
                      inherited type" (first attribute)))))))
 
-(defun def-class (class-name parents &rest parts)
-  (let* ((fields (loop for part in parts
-                       when (eq (first part) 'fields)
-                       nconc (rest part)))
-         (methods (loop for part in parts
-                        when (eq (first part) 'methods)
-                        nconc (rest part)))
-         (final-fields (ensure-field-types
-                        (append fields 
-                                (loop for parent in 
-                                      (nconc parents 
-                                             (get-parents-list-sorted parents))
-                                      nconc (loop for attribute in 
-                                                  (get-attributes parent)
-                                                  unless (find (first attribute)
-                                                               fields 
-                                                               :key #'first)
-                                                  collect attribute)))))
-         (final-methods (append methods 
-                                (loop for parent in 
-                                      (nconc parents 
-                                             (get-parents-list-sorted parents))
-                                      nconc (loop for method in 
-                                                  (get-methods parent)
-                                                  unless (find (first method)
-                                                               methods 
-                                                               :key #'first)
-                                                  collect method)))))
-    (check-subtype-integrity parents fields)
-    (check-fields-types fields)
-    (add-class-spec class-name `(,class-name ,parents 
-                                             ,final-fields ,final-methods))
-    class-name))
-
-(defun method-dispatcher (method-name)
+;;; Links a method to its implementation based on class and method names,
+;;; handling method invocation or signaling an error if the method is not found.
+(defun method-linker (method-name)
   (setf (fdefinition method-name)
         (lambda (&rest params)
           (let ((class-name (first (get-instance (first params)))))
@@ -118,7 +107,48 @@
                   (error "Error: Method ~A not found in class ~A" 
                          method-name class-name)))))))
 
+;;; Collects attributes from parent classes not present in 'parts', using a 
+;;; specified function to retrieve attributes from each parent.
+(defun get-missing-parts (get-parts-function parents parts)
+  (loop for parent in 
+        (nconc parents 
+                (get-parents-list-sorted parents))
+        nconc (loop for attribute in 
+                    (funcall get-parts-function parent)
+                    unless (find (first attribute)
+                                  parts 
+                                  :key #'first)
+                    collect attribute)))
 
+;;; (def-class <class-name> <parents> <part>*) => <class-name | error>
+;;;
+;;; Defines a new class with fields and methods, including inherited ones,
+;;; and performs type checks and integrity validations.
+(defun def-class (class-name parents &rest parts)
+  (let* ((fields (loop for part in parts
+                       when (eq (first part) 'fields)
+                       nconc (rest part)))
+         (methods (loop for part in parts
+                        when (eq (first part) 'methods)
+                        nconc (rest part)))
+         (final-fields (ensure-field-types
+                        (append fields
+                                (get-missing-parts 'get-attributes parents
+                                                   fields))))
+         (final-methods (append methods
+                                (get-missing-parts 'get-methods parents
+                                                    methods))))
+
+    (check-subtype-integrity parents fields)
+    (check-fields-types fields)
+    (add-class-spec class-name `(,class-name ,parents 
+                                 ,final-fields ,final-methods))
+    class-name))
+
+;;; (make <class-name> [<field-name> <value>]*) => <instance | error>
+;;;
+;;; Creates an instance of a specified class, handling field initialization, 
+;;; method linking, and validation of field types and attributes.
 (defun make (class-name &rest parts)
   (unless (class-spec class-name)
     (error "Error: class ~A doesn't exist" class-name))
@@ -159,40 +189,50 @@
                         (method-body (third method)))
                     (define-method class-name method-name
                       (eval `(lambda ,method-params ,method-body)))
-                    (method-dispatcher method-name)))
+                    (method-linker method-name)))
         
         (add-instance (list class-name (append fields missing-fields)
                             (get-methods class-name)))))
 
-
-
-
+;;; (is-class <class-name>) => T/NIL (alias is-class-p)
+;;;
+;;; Checks if a given class name corresponds to a defined class.
 (defun is-class (class-name)
   (not (null (class-spec class-name))))
 
+;;; (is-instance <value> [<class-name>]) => T/NIL (alias is-instance-p)
+;;; 
+;;; Determines if an object is an instance of a given class or any of its parent 
+;;; classes, with an option to check against any class.
 (defun is-instance (instance &optional (class-name T))
-  (and (instance-exist instance)
+  (and (not( null (get-instance instance )))
        (or (eq class-name T)
-           (not (null (member class-name (get-parents (first (get-instance instance))) :test #'eql))))))
+           (not (null (member class-name
+                              (get-parents (first (get-instance instance)))
+                              :test #'eql))))))
 
-
-
+;;; (field <instance> <field-name>) => <field-value | error>
+;;;
+;;; Retrieves the value of a specified field from an instance,
+;;; raising an error if the field is not found.
 (defun field (instance field-name)
-  (let ((field-found (find field-name (second (get-instance instance)) :key #'first)))
+  (let ((field-found (find field-name
+                           (second (get-instance instance))
+                           :key #'first)))
     (unless field-found
       (error "Error: unknown field."))
     (second field-found)))
 
-
+;;; (field* <instance> <field-name>+) => <field-value | error>
+;;; Extended version of field.
+;;; Allows accessing nested fields within an instance
+;;; or its related instances.
 (defun field* (instance field-names)
   (if field-names
       (if (= (length field-names) 1)
           (field instance (first field-names))
           (field* (field instance (first field-names)) (rest field-names)))
       (error "Error: no field names provided")))
-
-
-(def-class 'using-integers () '(fields (x 42 integer)))
 
 
 ;;
